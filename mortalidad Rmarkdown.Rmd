@@ -1,0 +1,137 @@
+---
+title: "Analisis de Mortalidad en Uruguay (1875-2023)"
+author: "Manuel Cardozo Caceres"
+date: "2026-07-18"
+output: html_document
+---
+
+## Introducción
+
+Este análisis explora la mortalidad en Uruguay utilizando datos del Instituto Nacional de Estadística (INE) y el Ministerio de Salud Pública (MSP). Se examinan las principales causas de muerte para 2022 y 2023, la distribución por sexo, y la evolución histórica de defunciones entre 1875 y 2023.
+
+## Carga de librerías y datos
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+```
+
+## Datos de causas de muerte 2022-2023
+
+```{r datos_causas, warning=FALSE}
+defunciones_raw <- read_excel("2.3.3ok.xls", 
+                               sheet = 1, 
+                               skip = 6,
+                               col_names = FALSE)
+names(defunciones_raw) <- c("causa", 
+                             "total_2022", "masc_2022", "fem_2022", "indet_2022", "noindicado_2022",
+                             "col_vacia",
+                             "total_2023", "masc_2023", "fem_2023", "indet_2023", "noindicado_2023")
+
+defunciones_limpio <- defunciones_raw %>%
+  slice(-1) %>%
+  filter(!is.na(causa)) %>%
+  select(-col_vacia, -indet_2022, -noindicado_2022, -indet_2023, -noindicado_2023) %>%
+  mutate(across(-causa, as.numeric))
+```
+
+## Principales causas de muerte en 2023
+
+```{r grafico_top10, fig.width=10, fig.height=6, warning=FALSE}
+defunciones_limpio %>%
+  filter(!is.na(total_2023)) %>%
+  arrange(desc(total_2023)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = reorder(causa, total_2023), y = total_2023)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 causas de muerte en Uruguay - 2023",
+       x = "Causa",
+       y = "Defunciones") +
+  theme_minimal()
+```
+
+## Defunciones por sexo - principales causas 2023
+
+```{r grafico_sexo, fig.width=10, fig.height=6, warning=FALSE}
+top5 <- defunciones_limpio %>%
+  filter(!is.na(total_2023)) %>%
+  arrange(desc(total_2023)) %>%
+  slice(1:5)
+
+top5_largo <- top5 %>%
+  select(causa, masc_2023, fem_2023) %>%
+  pivot_longer(cols = c(masc_2023, fem_2023),
+               names_to = "sexo",
+               values_to = "defunciones") %>%
+  mutate(sexo = case_when(
+    sexo == "masc_2023" ~ "Masculino",
+    sexo == "fem_2023"  ~ "Femenino"
+  ))
+
+ggplot(top5_largo, aes(x = reorder(causa, defunciones), 
+                        y = defunciones, 
+                        fill = sexo)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  scale_fill_manual(values = c("Masculino" = "steelblue", 
+                                "Femenino" = "salmon")) +
+  labs(title = "Defunciones por sexo - Top 5 causas 2023",
+       x = "Causa", y = "Defunciones", fill = "Sexo") +
+  theme_minimal()
+```
+
+## Variación de defunciones por causa: 2022 vs 2023
+
+```{r grafico_variacion, fig.width=10, fig.height=6, warning=FALSE}
+variacion <- defunciones_limpio %>%
+  filter(!is.na(total_2022) & !is.na(total_2023)) %>%
+  mutate(diferencia = total_2023 - total_2022) %>%
+  arrange(desc(diferencia))
+
+ggplot(variacion, aes(x = reorder(causa, diferencia), y = diferencia, 
+                       fill = diferencia > 0)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("TRUE" = "firebrick", "FALSE" = "steelblue"),
+                     labels = c("TRUE" = "Aumentó", "FALSE" = "Disminuyó")) +
+  labs(title = "Variación de defunciones por causa: 2022 vs 2023",
+       x = "Causa", y = "Diferencia (2023 - 2022)", fill = "") +
+  theme_minimal()
+```
+
+## Evolución histórica de defunciones en Uruguay (1875-2023)
+
+```{r grafico_historico, fig.width=10, fig.height=6, warning=FALSE}
+serie_historica <- read_excel("serie hist.xlsx", 
+                              sheet = 1, 
+                              skip = 7,
+                              col_names = c("anio", "defunciones"))
+
+serie_limpia <- serie_historica %>%
+  filter(!is.na(anio)) %>%
+  filter(!str_detect(anio, "Fuente")) %>%
+  mutate(anio = as.numeric(anio),
+         defunciones = as.numeric(defunciones))
+
+ggplot(serie_limpia, aes(x = anio, y = defunciones)) +
+  geom_line(color = "steelblue", linewidth = 0.8) +
+  geom_point(size = 0.8, color = "steelblue") +
+  geom_vline(xintercept = 2021, linetype = "dashed", color = "red", alpha = 0.5) +
+  annotate("text", x = 2021, y = max(serie_limpia$defunciones, na.rm = TRUE), 
+           label = "COVID-19", color = "red", hjust = 1.1, size = 3) +
+  labs(title = "Evolución de defunciones anuales en Uruguay (1875-2023)",
+       subtitle = "Pico anómalo en 1967: posible cambio metodológico (CIE-8 en 1968)",
+       x = "Año",
+       y = "Defunciones") +
+  theme_minimal()
+```
+
+## Conclusiones
+
+- Las enfermedades del sistema circulatorio y los tumores son las principales causas de muerte en Uruguay, representando más del 40% del total de defunciones en 2023.
+- Se observa una marcada diferencia por sexo en causas externas de morbilidad y mortalidad, donde los hombres duplican a las mujeres.
+- La caída de muertes por COVID-19 entre 2022 y 2023 es el cambio más significativo entre ambos años.
+- La serie histórica muestra un crecimiento sostenido de defunciones absolutas consistente con el crecimiento poblacional, con un pico anómalo en 1967 que requiere investigación adicional.
+
+*Fuentes: Instituto Nacional de Estadística (INE) y Ministerio de Salud Pública (MSP) de Uruguay.*
